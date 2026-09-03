@@ -1,9 +1,7 @@
 # ===== 依赖与构建产物 =====
 node_modules/
 frontend/node_modules/
-dist/
 frontend/dist/
-backend/dist/
 __pycache__/
 *.pyc
 *.pyo
