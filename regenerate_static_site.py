@@ -129,6 +129,19 @@ FIX_JS = """
     }
   });
 
+  // 4c. 工具详情页"返回工具箱列表"按钮 → 链接
+  document.querySelectorAll('.ant-btn').forEach(btn => {
+    const text = btn.textContent || '';
+    if (text.includes('返回工具箱')) {
+      const a = document.createElement('a');
+      a.href = 'tools.html';
+      a.style.cssText = 'color:#5b9cf5;text-decoration:none;display:inline-flex;align-items:center;gap:4px;';
+      a.innerHTML = btn.innerHTML;
+      btn.parentNode.replaceChild(a, btn);
+      a.setAttribute('data-back-link', 'tools.html');
+    }
+  });
+
   // 5. 注入防御性 CSS
   const style = document.createElement('style');
   style.textContent = `
@@ -189,6 +202,24 @@ with sync_playwright() as p:
         except Exception as e:
             print(f"  ✗ {filename} 失败: {str(e)[:100]}")
 
+    # 生成所有工具详情页
+    tool_ids = sorted(set(TOOL_MAP.values()))
+    print(f"\n生成 {len(tool_ids)} 个工具详情页...")
+    for tid in tool_ids:
+        try:
+            filename = f"tools-{tid}.html"
+            page.goto(f"{BASE}/tools/{tid}", wait_until="networkidle", timeout=25000)
+            time.sleep(2)
+            result = page.evaluate(FIX_JS, {"toolMap": TOOL_MAP})
+            time.sleep(0.5)
+            html = page.content()
+            out_path = os.path.join(OUT_DIR, filename)
+            with open(out_path, 'w', encoding='utf-8') as f:
+                f.write(html)
+        except Exception as e:
+            print(f"  ✗ {filename} 失败: {str(e)[:80]}")
+
+    print(f"  工具详情页生成完成（{len(tool_ids)} 个）")
     browser.close()
 
 print("\nstatic-site 重新生成完成！")
