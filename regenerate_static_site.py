@@ -1,19 +1,38 @@
 """重新生成 static-site 静态站点：
 1. 将 ECharts canvas 图表转为内嵌图片（解决图表空白）
 2. 移除 Vite 开发服务器引用（避免部署后 404）
-3. 将 Ant Design Menu 导航转为真实 <a> 链接（实现页面间点击跳转）
+3. 侧边栏 Menu 导航转为真实 <a> 链接（页面间跳转）
+4. tools.html 工具卡片转为详情页链接（tools-{id}.html）
+5. 新闻卡片转为原文外链
 """
 from playwright.sync_api import sync_playwright
 import time
 import os
+import json
+import urllib.request
 
 BASE = "http://localhost:5173"
 OUT_DIR = "/Users/qingyangxu./VibeCoding/Trae1/Zero-Carbon project/static-site"
 
-# 页面修复 JS：canvas转图 + 移除Vite引用 + Menu转链接
+
+def get_tool_map():
+    """从后端 API 获取 工具名 -> id 映射。"""
+    try:
+        with urllib.request.urlopen("http://localhost:8080/api/tools?page_size=50", timeout=10) as r:
+            data = json.loads(r.read())
+            return {t['name']: t['id'] for t in data['items']}
+    except Exception:
+        return {}
+
+
+TOOL_MAP = get_tool_map()
+print(f"已获取工具映射：{len(TOOL_MAP)} 个工具")
+
+# 页面修复 JS：canvas转图 + 移除Vite引用 + Menu转链接 + 工具卡片转链接
 FIX_JS = """
-() => {
-  let result = { charts: 0, navLinks: 0, scriptsRemoved: 0 };
+(args) => {
+  let result = { charts: 0, navLinks: 0, scriptsRemoved: 0, toolLinks: 0 };
+  const toolMap = args.toolMap;
 
   // 1. 移除 Vite 开发服务器脚本引用（部署后会 404）
   document.querySelectorAll('script[src]').forEach(s => {
@@ -22,7 +41,6 @@ FIX_JS = """
       result.scriptsRemoved++;
     }
   });
-  // 移除注入的 React Refresh inline script
   document.querySelectorAll('script').forEach(s => {
     if (s.textContent.includes('@react-refresh') || s.textContent.includes('injectIntoGlobalHook')) {
       s.remove();
@@ -63,7 +81,7 @@ FIX_JS = """
       if (text.includes(key)) {
         const a = document.createElement('a');
         a.href = href;
-        a.style.cssText = 'color:inherit;text-decoration:none;display:block;width:100%;';
+        a.style.cssText = 'color:inherit;text-decoration:none;display:block;width:100%;height:100%;position:relative;z-index:2;cursor:pointer;';
         a.innerHTML = item.innerHTML;
         item.innerHTML = '';
         item.appendChild(a);
@@ -73,6 +91,54 @@ FIX_JS = """
       }
     }
   });
+
+  // 4. tools 页：工具卡片 → 详情页链接
+  document.querySelectorAll('.ant-card').forEach(card => {
+    if (card.querySelector('a[href]')) return;
+    const text = card.textContent || '';
+    for (const [name, id] of Object.entries(toolMap)) {
+      if (text.includes(name)) {
+        const a = document.createElement('a');
+        a.href = `tools-${id}.html`;
+        a.style.cssText = 'color:inherit;text-decoration:none;display:block;height:100%;';
+        a.innerHTML = card.innerHTML;
+        card.innerHTML = '';
+        card.appendChild(a);
+        card.setAttribute('data-tool-link', id);
+        result.toolLinks++;
+        break;
+      }
+    }
+  });
+
+  // 4b. news 页：新闻标题 → 原文外链（点击标题跳转原文）
+  document.querySelectorAll('.ant-card').forEach(card => {
+    if (card.getAttribute('data-tool-link')) return;
+    const existing = card.querySelector('a[href^="http"]');
+    const title = card.querySelector('strong');
+    if (existing && title && !title.querySelector('a')) {
+      const url = existing.getAttribute('href');
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.style.cssText = 'color:#e0e6ed;text-decoration:none;';
+      title.parentNode.replaceChild(a, title);
+      a.appendChild(title);
+      card.setAttribute('data-news-link', 'true');
+    }
+  });
+
+  // 5. 注入防御性 CSS
+  const style = document.createElement('style');
+  style.textContent = `
+    .ant-menu-item a::before { pointer-events: none !important; }
+    .ant-menu-item a { position: relative !important; z-index: 2 !important; }
+    .ant-menu-item { cursor: pointer !important; }
+    a[data-nav-link], a[data-tool-link], a[href$=".html"] { pointer-events: auto !important; }
+    .ant-card a { color: inherit; }
+  `;
+  document.head.appendChild(style);
 
   return result;
 }
@@ -108,8 +174,8 @@ with sync_playwright() as p:
                     btn.first.click()
                     time.sleep(4)
 
-            # 执行修复：canvas转图 + 移除Vite + Menu转链接
-            result = page.evaluate(FIX_JS)
+            # 执行修复
+            result = page.evaluate(FIX_JS, {"toolMap": TOOL_MAP})
             time.sleep(1)
 
             # 保存完整 HTML
@@ -119,7 +185,7 @@ with sync_playwright() as p:
                 f.write(html)
 
             size = os.path.getsize(out_path) / 1024
-            print(f"  ✓ {filename} ({size:.0f}KB, 图表{result['charts']}个, 导航链接{result['navLinks']}个, 移除脚本{result['scriptsRemoved']}个)")
+            print(f"  ✓ {filename} ({size:.0f}KB, 图表{result['charts']}, 导航{result['navLinks']}, 工具链接{result['toolLinks']}, 移除脚本{result['scriptsRemoved']})")
         except Exception as e:
             print(f"  ✗ {filename} 失败: {str(e)[:100]}")
 
