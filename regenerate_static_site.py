@@ -1,4 +1,8 @@
-"""重新生成 static-site 静态页面，将 ECharts canvas 图表转为内嵌图片，解决图表空白问题。"""
+"""重新生成 static-site 静态站点：
+1. 将 ECharts canvas 图表转为内嵌图片（解决图表空白）
+2. 移除 Vite 开发服务器引用（避免部署后 404）
+3. 将 Ant Design Menu 导航转为真实 <a> 链接（实现页面间点击跳转）
+"""
 from playwright.sync_api import sync_playwright
 import time
 import os
@@ -6,14 +10,30 @@ import os
 BASE = "http://localhost:5173"
 OUT_DIR = "/Users/qingyangxu./VibeCoding/Trae1/Zero-Carbon project/static-site"
 
-# 将 canvas 替换为 dataURL 图片的 JS
-CANVAS_TO_IMG_JS = """
+# 页面修复 JS：canvas转图 + 移除Vite引用 + Menu转链接
+FIX_JS = """
 () => {
-  const canvases = document.querySelectorAll('canvas');
-  canvases.forEach((canvas, i) => {
+  let result = { charts: 0, navLinks: 0, scriptsRemoved: 0 };
+
+  // 1. 移除 Vite 开发服务器脚本引用（部署后会 404）
+  document.querySelectorAll('script[src]').forEach(s => {
+    if (s.src.includes('vite') || s.src.includes('main.tsx') || s.src.includes('@react-refresh')) {
+      s.remove();
+      result.scriptsRemoved++;
+    }
+  });
+  // 移除注入的 React Refresh inline script
+  document.querySelectorAll('script').forEach(s => {
+    if (s.textContent.includes('@react-refresh') || s.textContent.includes('injectIntoGlobalHook')) {
+      s.remove();
+    }
+  });
+
+  // 2. 将 ECharts canvas 替换为图片
+  document.querySelectorAll('canvas').forEach((canvas) => {
     try {
       const w = canvas.width, h = canvas.height;
-      if (w < 10 || h < 10) return;  // 跳过无效 canvas
+      if (w < 10 || h < 10) return;
       const dataURL = canvas.toDataURL('image/png');
       if (!dataURL || dataURL === 'data:,') return;
       const img = document.createElement('img');
@@ -22,13 +42,39 @@ CANVAS_TO_IMG_JS = """
       img.style.width = canvas.style.width;
       img.style.height = canvas.style.height;
       img.setAttribute('data-chart-image', 'true');
-      // 替换 canvas（保留父容器）
       canvas.parentNode.replaceChild(img, canvas);
-    } catch (e) {
-      // 跨域或空 canvas，跳过
+      result.charts++;
+    } catch (e) {}
+  });
+
+  // 3. 主导航 Menu → 真实链接
+  const menuMap = {
+    '总览仪表盘': 'index.html',
+    '工具箱浏览': 'tools.html',
+    '园区匹配': 'match.html',
+    'AI报告生成': 'report.html',
+    '政策法规': 'policies.html',
+    '新闻资讯': 'news.html',
+    '零碳白皮书': 'whitepaper.html',
+  };
+  document.querySelectorAll('.ant-menu-item').forEach(item => {
+    const text = item.textContent || '';
+    for (const [key, href] of Object.entries(menuMap)) {
+      if (text.includes(key)) {
+        const a = document.createElement('a');
+        a.href = href;
+        a.style.cssText = 'color:inherit;text-decoration:none;display:block;width:100%;';
+        a.innerHTML = item.innerHTML;
+        item.innerHTML = '';
+        item.appendChild(a);
+        item.setAttribute('data-nav-link', href);
+        result.navLinks++;
+        break;
+      }
     }
   });
-  return document.querySelectorAll('img[data-chart-image]').length;
+
+  return result;
 }
 """
 
@@ -53,7 +99,6 @@ with sync_playwright() as p:
         try:
             print(f"生成 {filename} ({path})...")
             page.goto(f"{BASE}{path}", wait_until="networkidle", timeout=25000)
-            # 等待数据加载
             time.sleep(3)
 
             # 白皮书需要先点击生成
@@ -63,8 +108,8 @@ with sync_playwright() as p:
                     btn.first.click()
                     time.sleep(4)
 
-            # 将 canvas 转为图片
-            img_count = page.evaluate(CANVAS_TO_IMG_JS)
+            # 执行修复：canvas转图 + 移除Vite + Menu转链接
+            result = page.evaluate(FIX_JS)
             time.sleep(1)
 
             # 保存完整 HTML
@@ -74,7 +119,7 @@ with sync_playwright() as p:
                 f.write(html)
 
             size = os.path.getsize(out_path) / 1024
-            print(f"  ✓ {filename} ({size:.0f}KB, 图表图片{img_count}个)")
+            print(f"  ✓ {filename} ({size:.0f}KB, 图表{result['charts']}个, 导航链接{result['navLinks']}个, 移除脚本{result['scriptsRemoved']}个)")
         except Exception as e:
             print(f"  ✗ {filename} 失败: {str(e)[:100]}")
 
