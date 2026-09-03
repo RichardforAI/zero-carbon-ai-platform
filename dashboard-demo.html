@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1400, initial-scale=1.0">
+<title>AI赋能零碳园区策略平台 — Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #0f1923; color: #e0e6ed; }
+.dashboard { display: flex; min-height: 100vh; }
+
+/* Sidebar */
+.sidebar { width: 240px; background: #151f2b; border-right: 1px solid #1e2d3d; padding: 20px 0; flex-shrink: 0; display: flex; flex-direction: column; }
+.logo { padding: 0 20px 24px; border-bottom: 1px solid #1e2d3d; }
+.logo h1 { font-size: 16px; color: #40e495; font-weight: 700; }
+.logo p { font-size: 11px; color: #6b7d8e; margin-top: 4px; }
+.nav-section { padding: 16px 0; }
+.nav-label { padding: 0 20px 8px; font-size: 10px; text-transform: uppercase; color: #4a5c6e; letter-spacing: 1px; }
+.nav-item { padding: 10px 20px; display: flex; align-items: center; gap: 10px; font-size: 13px; color: #8899aa; cursor: pointer; transition: all .2s; border-left: 3px solid transparent; }
+.nav-item:hover, .nav-item.active { color: #e0e6ed; background: rgba(64,228,149,.08); border-left-color: #40e495; }
+.nav-item .icon { width: 20px; text-align: center; font-size: 15px; }
+
+/* Main */
+.main { flex: 1; padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+.header { display: flex; justify-content: space-between; align-items: center; }
+.header h2 { font-size: 22px; font-weight: 600; }
+.header-right { display: flex; gap: 12px; align-items: center; }
+.role-badge { background: #1a3a2a; color: #40e495; padding: 6px 14px; border-radius: 20px; font-size: 12px; border: 1px solid #2a5a3a; }
+.update-time { font-size: 12px; color: #6b7d8e; }
+
+/* KPI row */
+.kpi-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+.kpi-card { background: #151f2b; border: 1px solid #1e2d3d; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px; }
+.kpi-label { font-size: 12px; color: #6b7d8e; }
+.kpi-value { font-size: 32px; font-weight: 700; color: #fff; }
+.kpi-change { font-size: 11px; display: flex; align-items: center; gap: 4px; }
+.kpi-change.up { color: #40e495; }
+.kpi-change.info { color: #5b9cf5; }
+
+/* Charts row */
+.charts-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.chart-card { background: #151f2b; border: 1px solid #1e2d3d; border-radius: 12px; padding: 16px; }
+.chart-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #c0ccd8; }
+.chart-box { width: 100%; height: 280px; }
+
+/* Bottom row */
+.bottom-row { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; }
+.timeline-card { background: #151f2b; border: 1px solid #1e2d3d; border-radius: 12px; padding: 16px; }
+.timeline-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #c0ccd8; }
+.timeline-item { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid #1e2d3d; }
+.timeline-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; }
+.timeline-dot.new { background: #40e495; }
+.timeline-dot.update { background: #5b9cf5; }
+.timeline-date { font-size: 11px; color: #4a5c6e; min-width: 65px; }
+.timeline-text { font-size: 12px; color: #b0bec5; }
+.timeline-text strong { color: #e0e6ed; }
+.heatmap-card { background: #151f2b; border: 1px solid #1e2d3d; border-radius: 12px; padding: 16px; }
+.heatmap-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #c0ccd8; }
+
+/* Page 2: Category Browser */
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+.tag { padding: 6px 14px; border-radius: 16px; font-size: 12px; cursor: pointer; border: 1px solid #1e2d3d; background: #151f2b; color: #8899aa; transition: all .2s; }
+.tag:hover { border-color: #40e495; color: #40e495; }
+.tag.active { background: #1a3a2a; border-color: #40e495; color: #40e495; }
+.filter-bar { display: flex; gap: 12px; align-items: center; margin: 16px 0; flex-wrap: wrap; }
+.filter-bar select, .filter-bar input { background: #151f2b; border: 1px solid #1e2d3d; color: #e0e6ed; padding: 8px 12px; border-radius: 8px; font-size: 12px; }
+.filter-bar input { width: 240px; }
+.filter-bar input::placeholder { color: #4a5c6e; }
+
+.card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.tool-card { background: #151f2b; border: 1px solid #1e2d3d; border-radius: 12px; padding: 18px; transition: all .2s; cursor: pointer; }
+.tool-card:hover { border-color: #40e495; transform: translateY(-2px); box-shadow: 0 8px 30px rgba(64,228,149,.08); }
+.tool-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.tool-card-icon { font-size: 28px; }
+.tool-card-stars { color: #f5c842; font-size: 12px; }
+.tool-card h4 { font-size: 15px; margin-bottom: 8px; color: #fff; }
+.tool-card-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.tool-tag { padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 500; }
+.tool-tag.type { background: #1a2a3a; color: #5b9cf5; }
+.tool-tag.park { background: #1a2a1a; color: #40e495; }
+.tool-card-footer { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #6b7d8e; }
+.tool-card-cases { color: #5b9cf5; }
+
+/* Page 3: Tool Detail */
+.back-btn { display: flex; align-items: center; gap: 6px; color: #5b9cf5; font-size: 13px; cursor: pointer; margin-bottom: 16px; }
+.detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+.detail-header h2 { font-size: 24px; color: #fff; }
+.detail-meta { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+.info-card { background: #151f2b; border: 1px solid #1e2d3d; border-radius: 12px; padding: 16px; }
+.info-card h3 { font-size: 13px; color: #6b7d8e; margin-bottom: 10px; text-transform: uppercase; letter-spacing: .5px; }
+.info-card p, .info-card li { font-size: 13px; color: #b0bec5; line-height: 1.7; }
+.info-card ul { list-style: none; padding: 0; }
+.info-card li::before { content: '• '; color: #40e495; }
+.tech-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.tech-tag { background: #1a2a3a; color: #5b9cf5; padding: 4px 10px; border-radius: 12px; font-size: 11px; }
+.case-item { padding: 8px 0; border-bottom: 1px solid #1e2d3d; font-size: 12px; }
+.case-item:last-child { border-bottom: none; }
+
+/* Page 4: Park Matching */
+.match-layout { display: grid; grid-template-columns: 300px 1fr; gap: 20px; }
+.match-input { background: #151f2b; border: 1px solid #1e2d3d; border-radius: 12px; padding: 20px; }
+.match-input h3 { font-size: 15px; margin-bottom: 16px; }
+.match-input select { width: 100%; background: #0f1923; border: 1px solid #1e2d3d; color: #e0e6ed; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; }
+.match-input button { width: 100%; background: #40e495; color: #0f1923; border: none; padding: 10px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.match-results h3 { font-size: 15px; margin-bottom: 12px; }
+.match-section { margin-bottom: 20px; }
+.match-section h4 { font-size: 13px; color: #6b7d8e; margin-bottom: 10px; }
+.recommend-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.rec-card { background: #151f2b; border: 1px solid #1e2d3d; border-radius: 10px; padding: 14px; display: flex; gap: 10px; align-items: flex-start; }
+.rec-card.highlight { border-color: #f5c842; background: #1a1a15; }
+.rec-icon { font-size: 24px; flex-shrink: 0; }
+.rec-info h4 { font-size: 13px; color: #fff; margin-bottom: 4px; }
+.rec-info p { font-size: 11px; color: #8899aa; }
+
+/* Section titles between pages */
+.section-divider { border-top: 1px solid #1e2d3d; margin: 10px 0 20px; }
+.section-label { font-size: 11px; color: #4a5c6e; text-align: center; margin: 4px 0; text-transform: uppercase; letter-spacing: 2px; }
+</style>
+</head>
+<body>
+
+<div class="dashboard">
+<!-- Sidebar -->
+<div class="sidebar">
+  <div class="logo">
+    <h1>🌱 AI赋能零碳园区</h1>
+    <p>策略平台系统 v1.0</p>
+  </div>
+  <div class="nav-section">
+    <div class="nav-label">主导航</div>
+    <div class="nav-item active"><span class="icon">📊</span>总览仪表盘</div>
+    <div class="nav-item"><span class="icon">🔍</span>工具箱浏览</div>
+    <div class="nav-item"><span class="icon">🏭</span>园区匹配</div>
+    <div class="nav-item"><span class="icon">📋</span>政策视角</div>
+  </div>
+  <div class="nav-section" style="margin-top:auto">
+    <div class="nav-label">系统</div>
+    <div class="nav-item"><span class="icon">⚙️</span>数据更新</div>
+    <div class="nav-item"><span class="icon">📖</span>使用帮助</div>
+  </div>
+</div>
+
+<!-- Main content -->
+<div class="main">
+
+<!-- PAGE 1: OVERVIEW DASHBOARD -->
+<div class="header">
+  <h2>📊 总览仪表盘</h2>
+  <div class="header-right">
+    <span class="update-time">🕐 最后更新：2026-07-16 09:30</span>
+    <span class="role-badge">👤 园区管理者视图</span>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi-card">
+    <div class="kpi-label">AI工具总数</div>
+    <div class="kpi-value">128</div>
+    <div class="kpi-change up">↑ 12 本月新增</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">覆盖场景数</div>
+    <div class="kpi-value">36</div>
+    <div class="kpi-change up">↑ 3 本月新增</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">应用案例</div>
+    <div class="kpi-value">47</div>
+    <div class="kpi-change info">涵盖8个商业平台</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">园区类型覆盖</div>
+    <div class="kpi-value">6/6</div>
+    <div class="kpi-change up">全类型覆盖</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">运营环节覆盖</div>
+    <div class="kpi-value">11/11</div>
+    <div class="kpi-change up">全环节覆盖</div>
+  </div>
+</div>
+
+<div class="charts-row">
+  <div class="chart-card">
+    <h3>🔮 AI工具类型分布</h3>
+    <div class="chart-box" id="chart-pie"></div>
+  </div>
+  <div class="chart-card">
+    <h3>📡 各类型园区AI工具覆盖对比</h3>
+    <div class="chart-box" id="chart-bar"></div>
+  </div>
+  <div class="chart-card">
+    <h3>🎯 技术成熟度雷达图</h3>
+    <div class="chart-box" id="chart-radar"></div>
+  </div>
+</div>
+
+<div class="bottom-row">
+  <div class="timeline-card">
+    <h3>📰 最新动态</h3>
+    <div class="timeline-item">
+      <div class="timeline-dot new"></div>
+      <div class="timeline-date">07-15</div>
+      <div class="timeline-text"><strong>新增工具：</strong>CCUS碳捕集效率AI模拟工具 — 适用重化工近零碳型园区</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-dot update"></div>
+      <div class="timeline-date">07-14</div>
+      <div class="timeline-text"><strong>工具更新：</strong>光伏出力预测工具 v2.3 — 新增Transformer模型支持</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-dot new"></div>
+      <div class="timeline-date">07-13</div>
+      <div class="timeline-text"><strong>新增工具：</strong>园区碳汇AI遥感测算工具 — 适用生态高新技术型园区</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-dot update"></div>
+      <div class="timeline-date">07-12</div>
+      <div class="timeline-text"><strong>案例新增：</strong>朗新科技AI水务管理系统在甘泉堡经开区上线</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-dot new"></div>
+      <div class="timeline-date">07-10</div>
+      <div class="timeline-text"><strong>新增工具：</strong>港口岸电AI智能调度工具 — 适用临港特色产业型园区</div>
+    </div>
+  </div>
+  <div class="heatmap-card">
+    <h3>🗺️ 广东省零碳园区分布</h3>
+    <div class="chart-box" id="chart-map"></div>
+  </div>
+</div>
+
+<div class="section-divider"></div>
+<div class="section-label">▼ 模块二：分类导航浏览 ▼</div>
+
+<!-- PAGE 2: CATEGORY BROWSER -->
+<div class="header">
+  <h2>🔍 AI工具箱分类浏览</h2>
+  <span class="role-badge">筛选结果：42个工具</span>
+</div>
+
+<div class="toolbar">
+  <span class="tag active">全部(128)</span>
+  <span class="tag">🔮 预测类(16)</span>
+  <span class="tag">⚡ 优化类(22)</span>
+  <span class="tag">🎛️ 控制类(14)</span>
+  <span class="tag">🔧 诊断类(18)</span>
+  <span class="tag">📐 核算类(12)</span>
+  <span class="tag">👁️ 识别类(10)</span>
+  <span class="tag">📅 调度类(14)</span>
+  <span class="tag">📚 知识类(12)</span>
+  <span class="tag">🚀 创新类(10)</span>
+</div>
+
+<div class="filter-bar">
+  <select><option>全部园区类型</option><option>先进制造型</option><option>重化工近零碳型</option><option>新能源装备制造型</option><option>新材料型</option><option>临港特色产业型</option><option>生态高新技术型</option></select>
+  <select><option>全部运营环节</option><option>电力/能源管理</option><option>建筑用能优化</option><option>工业生产过程</option><option>设备运维管理</option><option>交通物流</option><option>碳核算与交易</option></select>
+  <select><option>全部成熟度</option><option>★★★★★</option><option>★★★★</option><option>★★★</option><option>★★</option><option>★</option></select>
+  <input type="text" placeholder="🔍 搜索AI工具名称、场景、技术关键词...">
+</div>
+
+<div class="card-grid">
+  <div class="tool-card">
+    <div class="tool-card-header">
+      <div class="tool-card-icon">🔮</div>
+      <div class="tool-card-stars">★★★★★</div>
+    </div>
+    <h4>电力负荷预测</h4>
+    <div class="tool-card-tags">
+      <span class="tool-tag type">预测类</span>
+      <span class="tool-tag park">全部园区</span>
+    </div>
+    <div class="tool-card-footer">
+      <span>能源管理</span>
+      <span class="tool-card-cases">📋 12个案例</span>
+    </div>
+  </div>
+
+  <div class="tool-card">
+    <div class="tool-card-header">
+      <div class="tool-card-icon">⚡</div>
+      <div class="tool-card-stars">★★★★</div>
+    </div>
+    <h4>储能充放电策略优化</h4>
+    <div class="tool-card-tags">
+      <span class="tool-tag type">优化类</span>
+      <span class="tool-tag park">全部园区</span>
+    </div>
+    <div class="tool-card-footer">
+      <span>能源管理</span>
+      <span class="tool-card-cases">📋 8个案例</span>
+    </div>
+  </div>
+
+  <div class="tool-card">
+    <div class="tool-card-header">
+      <div class="tool-card-icon">❄️</div>
+      <div class="tool-card-stars">★★★★★</div>
+    </div>
+    <h4>暖通空调AI节能控制</h4>
+    <div class="tool-card-tags">
+      <span class="tool-tag type">控制类</span>
+      <span class="tool-tag park">全部园区</span>
+    </div>
+    <div class="tool-card-footer">
+      <span>建筑用能优化</span>
+      <span class="tool-card-cases">📋 21个案例</span>
+    </div>
+  </div>
+
+  <div class="tool-card">
+    <div class="tool-card-header">
+      <div class="tool-card-icon">🏭</div>
+      <div class="tool-card-stars">★★★</div>
+    </div>
+    <h4>氢基竖炉工艺AI优化</h4>
+    <div class="tool-card-tags">
+      <span class="tool-tag type">优化类</span>
+      <span class="tool-tag park">重化工近零碳</span>
+    </div>
+    <div class="tool-card-footer">
+      <span>工业生产过程</span>
+      <span class="tool-card-cases">📋 2个案例</span>
+    </div>
+  </div>
+
+  <div class="tool-card">
+    <div class="tool-card-header">
+      <div class="tool-card-icon">🛰️</div>
+      <div class="tool-card-stars">★★★</div>
+    </div>
+    <h4>植被碳汇AI遥感评估</h4>
+    <div class="tool-card-tags">
+      <span class="tool-tag type">识别类</span>
+      <span class="tool-tag park">生态高新技术</span>
+    </div>
+    <div class="tool-card-footer">
+      <span>碳汇管理</span>
+      <span class="tool-card-cases">📋 3个案例</span>
+    </div>
+  </div>
+
+  <div class="tool-card">
+    <div class="tool-card-header">
+      <div class="tool-card-icon">🚛</div>
+      <div class="tool-card-stars">★★★★</div>
+    </div>
+    <h4>新能源车队智能调度</h4>
+    <div class="tool-card-tags">
+      <span class="tool-tag type">调度类</span>
+      <span class="tool-tag park">全部园区</span>
+    </div>
+    <div class="tool-card-footer">
+      <span>交通物流</span>
+      <span class="tool-card-cases">📋 6个案例</span>
+    </div>
+  </div>
+</div>
+
+<div style="text-align:center; padding:16px; color:#6b7d8e; font-size:12px;">
+  第 1 页 / 共 22 页 　〈 上一页　下一页 〉
+</div>
+
+<div class="section-divider"></div>
+<div class="section-label">▼ 模块三：工具详情页 ▼</div>
+
+<!-- PAGE 3: TOOL DETAIL -->
+<div class="back-btn">← 返回工具箱列表</div>
+<div class="detail-header">
+  <div>
+    <h2>🔮 电力负荷预测AI工具</h2>
+    <div class="detail-meta">
+      <span class="tool-tag type">预测类</span>
+      <span style="color:#f5c842">★★★★★</span>
+      <span class="tool-tag park">适用全部园区类型</span>
+      <span style="color:#6b7d8e;font-size:12px;">运营环节：能源管理</span>
+      <span style="color:#5b9cf5;font-size:12px;">12个应用案例</span>
+    </div>
+  </div>
+</div>
+
+<div class="detail-grid">
+  <div class="info-card">
+    <h3>📋 基本信息</h3>
+    <p><strong>工具类型：</strong>预测类（Forecasting）</p>
+    <p><strong>技术成熟度：</strong>★★★★★（商用成熟）</p>
+    <p><strong>适用园区：</strong>全部6种园区类型</p>
+    <p><strong>运营环节：</strong>电力/能源管理</p>
+    <p><strong>应用案例数：</strong>12个</p>
+  </div>
+  <div class="info-card">
+    <h3>💻 技术路径</h3>
+    <div class="tech-tags">
+      <span class="tech-tag">LSTM时序预测</span>
+      <span class="tech-tag">XGBoost梯度提升</span>
+      <span class="tech-tag">Transformer时序模型</span>
+      <span class="tech-tag">Prophet趋势分解</span>
+      <span class="tech-tag">LightGBM</span>
+      <span class="tech-tag">TFT时序融合</span>
+    </div>
+    <p style="margin-top:12px;font-size:12px;color:#8899aa;">主流方案：LSTM + XGBoost 集成，部分平台已升级至Transformer架构</p>
+  </div>
+</div>
+
+<div class="info-card" style="margin-bottom:8px;">
+  <h3>📖 适用场景描述</h3>
+  <p>当园区需要精准预测短期（日）/ 中期（周）/ 长期（月）电力负荷，以支撑购电计划制定、最大需量管理、储能充放电策略优化和分布式能源调度时使用。适用于所有配备智能电表、具有历史用电数据的园区。</p>
+</div>
+<div class="info-card" style="margin-bottom:8px;">
+  <h3>🤖 AI赋能方式</h3>
+  <p>利用园区历史用电数据（15分钟至1小时间隔）、气象信息（温度、湿度、辐照度）、生产计划/ occupancy数据等多元输入，训练深度学习模型学习负荷变化的时序规律与外部因素关联，实现高精度短期及中期预测，并输出置信区间和异常预警。</p>
+</div>
+<div class="info-card" style="margin-bottom:8px;">
+  <h3>💰 应用价值</h3>
+  <ul>
+    <li>预测精度 MAPE &lt; 5%，较传统方法提升 30-50%</li>
+    <li>降低需量电费 10-20%（通过精准需量预测避免超容罚款）</li>
+    <li>减少备用容量成本约 15%</li>
+    <li>支撑储能调度优化，提升绿电消纳率 12-18%</li>
+  </ul>
+</div>
+
+<div class="detail-grid">
+  <div class="info-card">
+    <h3>📐 前置条件与数据要求</h3>
+    <ul>
+      <li>至少1年历史用电数据（建议15分钟粒度）</li>
+      <li>当地历史气象数据（温度、湿度、辐照度）</li>
+      <li>生产计划/ occupancy数据（可选，提升精度）</li>
+      <li>节假日/特殊事件日历</li>
+      <li>建议算力：GPU服务器或云端推理</li>
+    </ul>
+  </div>
+  <div class="info-card">
+    <h3>📋 参考案例</h3>
+    <div class="case-item"><strong>远景EnOS</strong> — 沧州沧东经开区 — 负荷预测精度 &gt;95%，日级MAPE&lt;3%</div>
+    <div class="case-item"><strong>研华iEMS</strong> — 某电子工厂 — 短期负荷预测误差&lt;3%，支持需量预警</div>
+    <div class="case-item"><strong>江西电建智信</strong> — 江西某零碳园区 — 融合"以电算碳"算法</div>
+    <div class="case-item"><strong>朗新科技</strong> — 新疆甘泉堡经开区 — 多能流协同预测</div>
+  </div>
+</div>
+
+<div class="section-divider"></div>
+<div class="section-label">▼ 模块四：园区-工具智能匹配 ▼</div>
+
+<!-- PAGE 4: PARK-TOOL MATCHING -->
+<div class="header">
+  <h2>🏭 园区-AI工具智能匹配</h2>
+</div>
+
+<div class="match-layout">
+  <div class="match-input">
+    <h3>🎯 选择目标园区</h3>
+    <select>
+      <option>园区类型：重化工近零碳型</option>
+      <option>先进制造型</option>
+      <option>新能源装备制造型</option>
+      <option>新材料型</option>
+      <option>临港特色产业型</option>
+      <option>生态高新技术型</option>
+    </select>
+    <select>
+      <option>具体园区：湛江经开区（东海岛）</option>
+      <option>茂名滨海新区绿色化工和氢能产业园</option>
+    </select>
+    <button>🔍 智能匹配AI工具</button>
+    <p style="font-size:11px;color:#6b7d8e;margin-top:12px;">系统将基于园区产业特征、零碳建设方向和运营需求，自动推荐最匹配的AI工具集</p>
+  </div>
+
+  <div class="match-results">
+    <div class="match-section">
+      <h4>⭐ 核心推荐（5个）— 与湛江东海岛钢铁近零碳高度匹配</h4>
+      <div class="recommend-grid">
+        <div class="rec-card highlight"><div class="rec-icon">🏭</div><div class="rec-info"><h4>氢基竖炉工艺AI优化</h4><p>优化类 · ★★★ · 2案例</p></div></div>
+        <div class="rec-card highlight"><div class="rec-icon">💨</div><div class="rec-info"><h4>CCUS全流程AI监测</h4><p>创新类 · ★★★ · 1案例</p></div></div>
+        <div class="rec-card highlight"><div class="rec-icon">🔥</div><div class="rec-info"><h4>高温设备故障预警</h4><p>诊断类 · ★★★★ · 5案例</p></div></div>
+        <div class="rec-card highlight"><div class="rec-icon">⚡</div><div class="rec-info"><h4>工业余热回收AI控制</h4><p>控制类 · ★★★ · 3案例</p></div></div>
+        <div class="rec-card highlight"><div class="rec-icon">📐</div><div class="rec-info"><h4>钢铁产品碳足迹核算</h4><p>核算类 · ★★★★ · 4案例</p></div></div>
+      </div>
+    </div>
+    <div class="match-section">
+      <h4>📦 通用推荐（8个）</h4>
+      <div class="recommend-grid">
+        <div class="rec-card"><div class="rec-icon">🔮</div><div class="rec-info"><h4>电力负荷预测</h4><p>预测类 · ★★★★★</p></div></div>
+        <div class="rec-card"><div class="rec-icon">☀️</div><div class="rec-info"><h4>光伏出力预测</h4><p>预测类 · ★★★★★</p></div></div>
+        <div class="rec-card"><div class="rec-icon">⚡</div><div class="rec-info"><h4>储能充放电优化</h4><p>优化类 · ★★★★</p></div></div>
+        <div class="rec-card"><div class="rec-icon">❄️</div><div class="rec-info"><h4>暖通空调AI节能</h4><p>控制类 · ★★★★★</p></div></div>
+        <div class="rec-card"><div class="rec-icon">🔧</div><div class="rec-info"><h4>设备能效异常诊断</h4><p>诊断类 · ★★★★</p></div></div>
+        <div class="rec-card"><div class="rec-icon">💡</div><div class="rec-info"><h4>照明智能调控</h4><p>控制类 · ★★★★★</p></div></div>
+        <div class="rec-card"><div class="rec-icon">📚</div><div class="rec-info"><h4>AI能源报告生成</h4><p>知识类 · ★★★★</p></div></div>
+        <div class="rec-card"><div class="rec-icon">🚛</div><div class="rec-info"><h4>新能源车队调度</h4><p>调度类 · ★★★★</p></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- end main -->
+</div><!-- end dashboard -->
+
+<script>
+// ECharts dark theme
+let themeColors = ['#40e495','#5b9cf5','#f5c842','#f5706a','#a78bfa','#38bdf8','#fb923c','#4ade80','#e879f9'];
+
+// Pie Chart
+(function(){
+  let c = echarts.init(document.getElementById('chart-pie'));
+  c.setOption({
+    tooltip: { trigger: 'item' },
+    series: [{
+      type: 'pie', radius: ['50%','78%'], center: ['50%','55%'],
+      label: { color: '#8899aa', fontSize: 10 },
+      emphasis: { label: { fontSize: 13, fontWeight: 'bold' } },
+      data: [
+        { value: 22, name: '优化类', itemStyle: { color: '#5b9cf5' } },
+        { value: 18, name: '诊断类', itemStyle: { color: '#f5706a' } },
+        { value: 16, name: '预测类', itemStyle: { color: '#40e495' } },
+        { value: 14, name: '控制类', itemStyle: { color: '#a78bfa' } },
+        { value: 14, name: '调度类', itemStyle: { color: '#fb923c' } },
+        { value: 12, name: '核算类', itemStyle: { color: '#38bdf8' } },
+        { value: 12, name: '知识类', itemStyle: { color: '#4ade80' } },
+        { value: 10, name: '识别类', itemStyle: { color: '#f5c842' } },
+        { value: 10, name: '创新类', itemStyle: { color: '#e879f9' } },
+      ]
+    }]
+  });
+})();
+
+// Bar Chart
+(function(){
+  let c = echarts.init(document.getElementById('chart-bar'));
+  c.setOption({
+    tooltip: { trigger: 'axis' },
+    grid: { left: 45, right: 20, top: 10, bottom: 30 },
+    xAxis: {
+      type: 'category',
+      data: ['先进制造','重化工\n近零碳','新能源\n装备','新材料','临港\n特色','生态\n高新'],
+      axisLabel: { color: '#8899aa', fontSize: 9 }
+    },
+    yAxis: { type: 'value', name: '工具数', axisLabel: { color: '#8899aa', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e2d3d' } } },
+    series: [
+      { name: '高成熟度(4-5★)', type: 'bar', stack: 'a', data: [28, 18, 22, 15, 16, 14], itemStyle: { color: '#40e495' } },
+      { name: '中成熟度(2-3★)', type: 'bar', stack: 'a', data: [15, 16, 12, 10, 12, 14], itemStyle: { color: '#f5c842' } },
+      { name: '低成熟度(1★)', type: 'bar', stack: 'a', data: [2, 6, 4, 3, 4, 8], itemStyle: { color: '#f5706a' } }
+    ]
+  });
+})();
+
+// Radar Chart
+(function(){
+  let c = echarts.init(document.getElementById('chart-radar'));
+  c.setOption({
+    radar: {
+      center: ['50%','55%'],
+      radius: '60%',
+      indicator: [
+        { name: '能源管理', max: 5 }, { name: '建筑用能', max: 5 },
+        { name: '工业生产', max: 5 }, { name: '设备运维', max: 5 },
+        { name: '交通物流', max: 5 }, { name: '碳核算', max: 5 }
+      ],
+      axisName: { color: '#8899aa', fontSize: 9 }
+    },
+    series: [{
+      type: 'radar',
+      data: [
+        { value: [4.8, 4.6, 2.8, 4.2, 3.0, 3.2], name: '当前AI工具平均成熟度', areaStyle: { color: 'rgba(64,228,149,0.15)' }, lineStyle: { color: '#40e495', width: 2 }, itemStyle: { color: '#40e495' } }
+      ]
+    }]
+  });
+})();
+
+// Map Chart (simplified scatter on China map outline using guangdong coords)
+(function(){
+  let c = echarts.init(document.getElementById('chart-map'));
+  // Simplified Guangdong map using scatter on geo
+  c.setOption({
+    tooltip: { trigger: 'item', formatter: '{b}: {c}个AI工具推荐' },
+    grid: { left: 0, right: 0, top: 0, bottom: 0 },
+    xAxis: { show: false, min: 109, max: 118 },
+    yAxis: { show: false, min: 20, max: 26 },
+    series: [{
+      type: 'scatter',
+      symbolSize: val => Math.sqrt(val) * 8,
+      data: [
+        [113.26, 23.13, 30, '广州南沙'], [113.12, 23.02, 32, '佛山狮山'],
+        [114.42, 23.09, 28, '惠州惠城'], [113.38, 22.52, 28, '中山翠亨'],
+        [112.75, 22.25, 26, '江门台山'], [110.35, 21.20, 24, '湛江东海岛'],
+        [111.05, 21.50, 22, '茂名滨海新区'], [111.98, 21.85, 26, '阳江高新区'],
+        [112.45, 23.05, 28, '肇庆大旺'], [114.68, 23.75, 22, '河源高新区'],
+        [116.13, 24.28, 18, '梅州融湾'], [115.36, 22.78, 20, '汕尾红海湾'],
+        [116.68, 23.65, 18, '潮州新材料'], [112.05, 22.92, 18, '云浮新兴'],
+        [116.70, 23.35, 20, '汕头潮阳'],
+      ],
+      itemStyle: { color: '#40e495', shadowBlur: 10, shadowColor: 'rgba(64,228,149,0.3)' },
+      label: { show: true, formatter: '{@[3]}', fontSize: 9, color: '#8899aa', position: 'right' }
+    }]
+  });
+})();
+
+// Make all charts responsive
+window.addEventListener('resize', function(){
+  ['chart-pie','chart-bar','chart-radar','chart-map'].forEach(id => {
+    let dom = document.getElementById(id);
+    if (dom) { let inst = echarts.getInstanceByDom(dom); if (inst) inst.resize(); }
+  });
+});
+</script>
+</body>
+</html>

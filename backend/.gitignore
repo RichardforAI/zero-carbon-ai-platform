@@ -1,0 +1,6 @@
+# 不要提交敏感信息和运行时文件
+.env
+zero_carbon.db
+__pycache__/
+*.pyc
+.DS_Store
