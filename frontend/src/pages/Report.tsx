@@ -3,7 +3,7 @@ import { Card, Select, Button, Typography, Spin, Space, Empty, Alert, Anchor, Di
 import { FileTextOutlined, RobotOutlined, ClockCircleOutlined, BulbOutlined } from '@ant-design/icons'
 import { api, ParkItem, AgentReportResult } from '../api/client'
 
-const { Title, Text, Paragraph } = Typography
+const { Title, Text } = Typography
 
 /** Simple markdown-to-JSX renderer for report content */
 function SimpleMarkdown({ content }: { content: string }) {
@@ -36,13 +36,14 @@ function SimpleMarkdown({ content }: { content: string }) {
 
     // Unordered list
     if (/^[-*]\s/.test(line)) {
+      const startIdx = i
       const listItems: string[] = []
       while (i < lines.length && /^[-*]\s/.test(lines[i])) {
         listItems.push(lines[i].replace(/^[-*]\s+/, ''))
         i++
       }
       elements.push(
-        <ul key={i} style={{ color: '#c0ccd8', paddingLeft: 20, margin: '8px 0' }}>
+        <ul key={startIdx} style={{ color: '#c0ccd8', paddingLeft: 20, margin: '8px 0' }}>
           {listItems.map((item, idx) => {
             // Bold markers
             const formatted = item.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
@@ -56,13 +57,14 @@ function SimpleMarkdown({ content }: { content: string }) {
 
     // Ordered list
     if (/^\d+\.\s/.test(line)) {
+      const startIdx = i
       const listItems: string[] = []
       while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
         listItems.push(lines[i].replace(/^\d+\.\s+/, ''))
         i++
       }
       elements.push(
-        <ol key={i} style={{ color: '#c0ccd8', paddingLeft: 20, margin: '8px 0' }}>
+        <ol key={startIdx} style={{ color: '#c0ccd8', paddingLeft: 20, margin: '8px 0' }}>
           {listItems.map((item, idx) => {
             const formatted = item.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
             return <li key={idx} style={{ marginBottom: 4, lineHeight: 1.8 }}
@@ -81,19 +83,20 @@ function SimpleMarkdown({ content }: { content: string }) {
 
     // Blockquote
     if (/^>\s/.test(line)) {
+      const startIdx = i
       const quoteLines: string[] = []
       while (i < lines.length && /^>\s/.test(lines[i])) {
         quoteLines.push(lines[i].replace(/^>\s+/, ''))
         i++
       }
       elements.push(
-        <div key={i} style={{
+        <div key={startIdx} style={{
           borderLeft: '3px solid #5b9cf5', padding: '8px 16px', margin: '12px 0',
           background: 'rgba(91,156,245,0.08)', borderRadius: '0 4px 4px 0'
         }}>
           {quoteLines.map((ql, idx) => {
             const formatted = ql.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-            return <Paragraph key={idx} style={{ color: '#8ea4b8', margin: 0, fontSize: 13, lineHeight: 1.8 }}
+            return <p key={idx} style={{ color: '#8ea4b8', margin: 0, fontSize: 13, lineHeight: 1.8 }}
               dangerouslySetInnerHTML={{ __html: formatted }} />
           })}
         </div>
@@ -107,10 +110,18 @@ function SimpleMarkdown({ content }: { content: string }) {
       i++; continue
     }
 
-    // Normal paragraph
+    // Normal paragraph (also handles **bold** / *italic* lines that start with * or -)
+    const startIdx = i
     const paraLines: string[] = []
-    while (i < lines.length && lines[i].trim() !== '' && !/^[#>\-\*\d]/.test(lines[i]) && !/^---/.test(lines[i])) {
+    while (i < lines.length && lines[i].trim() !== '' &&
+      !/^#{1,6}\s/.test(lines[i]) && !/^[-*]\s/.test(lines[i]) && !/^\d+\.\s/.test(lines[i]) &&
+      !/^>\s?/.test(lines[i]) && !/^---/.test(lines[i])) {
       paraLines.push(lines[i])
+      i++
+    }
+    if (paraLines.length === 0) {
+      // Safety net: never loop forever on an unrecognized line type
+      paraLines.push(line)
       i++
     }
     const paraText = paraLines.join('\n')
@@ -120,7 +131,7 @@ function SimpleMarkdown({ content }: { content: string }) {
       .replace(/`([^`]+)`/g, '<code style="background:#1e2d3d;color:#40e495;padding:1px 6px;border-radius:3px;font-size:12px">$1</code>')
 
     elements.push(
-      <Paragraph key={i} style={{ color: '#c0ccd8', marginBottom: 8, lineHeight: 1.9, fontSize: 14 }}
+      <p key={startIdx} style={{ color: '#c0ccd8', marginBottom: 8, lineHeight: 1.9, fontSize: 14 }}
         dangerouslySetInnerHTML={{ __html: formatted }} />
     )
   }
