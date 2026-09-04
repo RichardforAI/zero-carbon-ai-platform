@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Park, Tool, Category
+from ..models import Park, Tool, Category, Policy
 from ..schemas import (
     AgentMatchRequest,
     AgentMatchResult,
@@ -263,7 +263,8 @@ def agent_report(req: AgentReportRequest, db: Session = Depends(get_db)):
 
     if not is_configured():
         # Demo mode — return template-based report
-        sections = _generate_demo_report(park, tools, categories, applicable_count, phase_summary, peers)
+        policies = db.query(Policy).all()
+        sections = _generate_demo_report(park, tools, categories, applicable_count, phase_summary, peers, policies)
         return AgentReportResult(
             park=ParkBrief.model_validate(park),
             report_title=report_title,
@@ -405,95 +406,164 @@ def agent_report(req: AgentReportRequest, db: Session = Depends(get_db)):
     )
 
 
-def _generate_demo_report(park, tools, categories, applicable_count, phase_summary, peers):
-    """Generate a template-based demo report when LLM is not configured."""
+def _generate_demo_report(park, tools, categories, applicable_count, phase_summary, peers, policies):
+    """Generate a data-rich template report when LLM is not configured."""
     applicable_tools = [t for t in tools if t.applicable_park_types and park.park_type in t.applicable_park_types]
     top_tools = sorted(applicable_tools, key=lambda t: t.maturity, reverse=True)[:8]
 
+    # ---- 工具库整体统计 ----
+    maturity_dist = {}
+    for t in tools:
+        maturity_dist[t.maturity] = maturity_dist.get(t.maturity, 0) + 1
+    maturity_str = '、'.join(f"{k}星 {v}个" for k, v in sorted(maturity_dist.items(), reverse=True))
+
+    category_dist = {}
+    for t in tools:
+        cat = categories.get(t.category_id)
+        cat_name = cat.name if cat else '未分类'
+        category_dist[cat_name] = category_dist.get(cat_name, 0) + 1
+    category_str = '、'.join(f"{k} {v}个" for k, v in sorted(category_dist.items(), key=lambda x: -x[1]))
+
+    total_cases = sum(t.case_count or 0 for t in tools)
+
+    # ---- 园区字段 ----
+    key_dirs = '、'.join(park.key_directions) if park.key_directions else '低碳发展'
+    energy = park.energy_profile or '暂无能耗特征数据'
+    carbon = park.carbon_structure or '暂无碳排结构数据'
+    challenges = park.core_challenges or '暂无核心挑战数据'
+    challenge_list = [c.strip() for c in (park.core_challenges or '').replace('，', '、').replace(',', '、').split('、') if c.strip()]
+
+    primary = getattr(park, 'park_type_primary', None)
+    secondary = getattr(park, 'park_type_secondary', None)
+    park_type_full = f"{primary} · {secondary}" if primary and secondary else (primary or park.park_type)
+
+    # ---- 路线图工具分层 ----
+    phase1_tools = [t for t in applicable_tools if t.maturity >= 4 and t.operation_phase in ('电力/能源管理', '建筑用能优化')]
+    phase2_tools = [t for t in applicable_tools if t.maturity >= 4 and t.operation_phase in ('设备运维管理', '碳核算与交易', '交通物流')]
+    phase3_tools = [t for t in applicable_tools if t.maturity < 4]
+
+    def _names(ts, limit=5):
+        return '、'.join(t.name for t in ts[:limit]) or '（按园区产业特征动态选型）'
+
+    mature_tool_names = '、'.join(t.name for t in applicable_tools if t.maturity >= 4) or '电力负荷预测、暖通空调节能控制'
+
+    # ---- 政策引用 ----
+    policy_topics = ('零碳园区', '碳市场', '碳核算', '碳关税')
+    relevant = [p for p in policies if p.topic in policy_topics]
+    relevant.sort(key=lambda p: 0 if p.topic == '零碳园区' else 1)
+    policy_lines = '\n'.join(
+        f"- **{p.title}**（{p.issuing_body}，{p.publish_date}）" for p in relevant[:5]
+    )
+
     sections = []
 
-    # Section 1
+    # ===== Section 1 园区概况 =====
     sections.append(ReportSection(title="一、园区概况", level=1, content=f"""
-**{park.name}** 位于广东省{park.city}市，属于**{park.park_type}**园区，建设类型为{park.build_type}，建设周期为{park.period}。
+**{park.name}** 位于广东省{park.city}市，属于**{park_type_full}**园区，建设类型为{park.build_type}，建设周期为{park.period}，园区级别为{park.level}。
 
 **主导产业**: {park.industry or '未指定'}
 
-**零碳建设重点方向**: {', '.join(park.key_directions) if park.key_directions else '未指定'}
+**零碳建设重点方向**: {key_dirs}
 
-该园区是广东省首批15个省级零碳园区之一，在{park.park_type}类别中具有代表性地位。其零碳转型路径围绕{'、'.join(park.key_directions) if park.key_directions else '低碳发展'}展开，是区域内产业绿色升级的重要载体。
+### 能耗特征
+{energy}
 
-> 💡 **提示**: 当前为Demo模式，报告内容基于模板生成。配置 `LLM_API_KEY` 后可启用AI生成的专业分析报告。
+### 碳排放结构
+{carbon}
+
+### 核心挑战
+{challenges}
+
+该园区是广东省首批15个省级零碳园区之一，在{park.park_type}类别中具有代表性地位。其零碳转型路径围绕{key_dirs}展开，是区域内产业绿色升级的重要载体。
+
+> 💡 **提示**: 当前为Demo模式，报告内容基于平台数据库实时聚合生成。配置 `LLM_API_KEY` 后可启用AI生成的专业分析报告。
 """))
 
-    # Section 2
+    # ===== Section 2 核心AI工具推荐 =====
     tool_list = ""
     for t in top_tools[:6]:
         cat = categories.get(t.category_id)
+        cat_name = cat.name if cat else '未分类'
+        value = t.value_props[0] if t.value_props else '提升运营效率'
+        pre = t.prerequisites or '需接入园区实时数据'
+        ai_method = t.ai_method or '未指定'
+        stars = '★' * t.maturity + '☆' * (5 - t.maturity)
+        case_note = ""
+        cases = getattr(t, 'cases', None) or []
+        if cases:
+            c = cases[0]
+            case_note = f"- **落地案例**: {c.platform_name} — {c.effect}"
         tool_list += f"""
 ### {t.name}
-- **分类**: {cat.name if cat else '未分类'} | **成熟度**: {'★' * t.maturity}{'☆' * (5 - t.maturity)}
+- **分类**: {cat_name} | **成熟度**: {stars} ({t.maturity}/5) | **运营环节**: {t.operation_phase or '未指定'}
 - **应用场景**: {t.scenario or '未指定'}
-- **预期效果**: {t.value_props[0] if t.value_props else '提升运营效率'}
-- **推荐理由**: 该工具适用于{park.park_type}园区，与园区{'、'.join(park.key_directions) if park.key_directions else '零碳建设'}方向高度匹配。
+- **AI方法**: {ai_method}
+- **预期效果**: {value}
+- **实施前提**: {pre}
+{case_note}
 """
     sections.append(ReportSection(title="二、核心AI工具推荐", level=1, content=f"""
-基于园区类型（{park.park_type}）和关键方向，推荐以下核心AI工具：
+基于园区类型（{park.park_type}）和关键方向，平台从 **{len(tools)}** 个AI工具中筛出 **{applicable_count}** 个适用工具，按成熟度与匹配度推荐以下核心工具：
 
 {tool_list}
+> **推荐逻辑**: 优先成熟度≥4的工具（已在真实园区验证），兼顾{park.park_type}园区的产业特征与{key_dirs}方向。
 """))
 
-    # Section 3
+    # ===== Section 3 技术缺口分析 =====
+    challenge_gap = '\n'.join(f"{i}. **{c}**" for i, c in enumerate(challenge_list[:5], 1)) or "暂无"
     sections.append(ReportSection(title="三、技术缺口分析", level=1, content=f"""
-### 当前覆盖情况
-- 园区类型 **{park.park_type}** 共有 **{applicable_count}** 个适用工具
-- 工具库总计 {len(tools)} 个工具，覆盖 {applicable_count}/{len(tools)}
+### 工具库覆盖现状
+- 园区类型 **{park.park_type}** 共有 **{applicable_count}** 个适用工具（覆盖率 {applicable_count}/{len(tools)}）
+- **成熟度分布**: {maturity_str}
+- **分类分布**: {category_str}
+- **累计落地案例**: {total_cases} 个
 
 ### 各运营环节覆盖
 {phase_summary}
 
+### 核心短板（对应园区挑战）
+{challenge_gap}
+
 ### 同类型园区参考
 {peers}
-
-### 主要缺口
-1. **数据基础设施**: 多数AI工具需要高质量历史数据支撑，园区需优先完善数据采集体系
-2. **人才储备**: AI工具的运维和调优需要专业技术团队
-3. **系统集成**: 各AI工具间的数据互通和协同优化需要统一平台支撑
 
 > 💡 **提示**: 当前为Demo模式分析。AI模式下将基于LLM推理生成更精准的个性化缺口分析。
 """))
 
-    # Section 4
+    # ===== Section 4 实施路线图 =====
     sections.append(ReportSection(title="四、实施路线图", level=1, content=f"""
+结合园区建设周期（{park.period}）与核心挑战，建议按三阶段有序推进：
+
 ### 第一阶段：基础建设期（近期，6-12个月）
-- **数据采集体系**: 部署IoT传感器和能源监测系统，建立数据基础
-- **电力负荷预测**: 部署ID:1工具，建立精准负荷预测能力
-- **暖通空调节能**: 在主要建筑部署AI节能控制系统
-- **预期里程碑**: 完成数据采集覆盖率80%，实现能耗数据实时监控
+- **数据基础**: 部署IoT传感器与能源监测系统，建立分环节、分设备的能耗数据采集体系
+- **能源与建筑节能（高成熟度工具）**: {_names(phase1_tools)}
+- **预期里程碑**: 数据采集覆盖率≥80%，实现能耗实时可视化与精准负荷预测
 
 ### 第二阶段：核心部署期（中期，1-2年）
-- **碳足迹核算**: 建立Scope 1/2碳排放核算体系
-- **储能优化**: 根据负荷预测结果部署储能充放电优化
-- **设备运维**: 关键设备接入故障预警系统
-- **预期里程碑**: 综合能效提升15%，碳排放强度下降10%
+- **设备运维与碳管理（高成熟度工具）**: {_names(phase2_tools)}
+- **储能与多能流协同**: 基于负荷与新能源出力预测，优化储能充放电与冷热电多能调度
+- **预期里程碑**: 综合能效提升15%以上，碳排放强度下降10%，关键设备故障预警覆盖
 
 ### 第三阶段：优化提升期（远期，2-3年）
-- **多能流协同**: 实现电、冷、热多能互补优化调度
-- **零碳路径模拟**: 基于系统动力学进行多情景对比分析
-- **供应链碳管理**: 向上下游延伸碳足迹管理
-- **预期里程碑**: 达成零碳园区核心指标，形成可复制推广模式
+- **前沿与创新工具（低成熟度）**: {_names(phase3_tools)}
+- **零碳路径闭环**: 基于情景模拟优化零碳路径，向供应链上下游延伸碳足迹管理
+- **预期里程碑**: 达成零碳园区核心指标，形成可复制推广的园区级零碳模式
 
 > 💡 **提示**: 当前为Demo模式路线图。AI模式下将基于园区实际参数生成更精准的分阶段实施方案。
 """))
 
-    # Section 5
+    # ===== Section 5 总结与建议 =====
     sections.append(ReportSection(title="五、总结与建议", level=1, content=f"""
 ### 核心结论
-{park.name}作为广东省{park.park_type}零碳园区的代表，具有良好的产业基础和政策支持。通过系统性部署AI工具，可在能效提升、碳排放管理和运营优化方面取得显著成效。
+{park.name}作为广东省{park.park_type}零碳园区的代表，具有良好的产业基础和政策支持。通过系统性部署AI工具，可在能效提升、碳排放管理和运营优化方面取得显著成效。园区碳排结构为「{carbon}」，AI赋能的关键在于源-网-荷-储协同与分环节能效精细化管理。
+
+### 政策依据
+{policy_lines}
 
 ### 优先行动建议
 1. **立即启动数据基础设施建设**: 高质量数据是所有AI工具的前提，建议优先部署IoT监测和数据采集系统
-2. **从成熟工具入手**: 优先部署成熟度≥4的工具（如电力负荷预测、暖通空调节能控制），快速见效建立信心
-3. **制定分阶段实施计划**: 按照"基础建设→核心部署→优化提升"三阶段有序推进，避免资源分散
+2. **从成熟工具入手**: 优先部署成熟度≥4的工具（{mature_tool_names}），快速见效建立信心
+3. **对标政策要求**: 紧抓零碳园区国标（GB/T 51100-2026）与广东省零碳园区建设名单要求，建立可量化、可追溯的碳管理体系
 
 ### 风险提示
 - AI工具的实施效果依赖于数据质量和运维能力
